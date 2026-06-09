@@ -510,6 +510,49 @@ body{background:var(--side-bg)}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
+
+// ============================================================
+// SOUNDS (Web Audio API — no external files needed)
+// ============================================================
+const AC = new (window.AudioContext||window.webkitAudioContext)();
+
+function playSound(type){
+  try{
+    const o=AC.createOscillator();
+    const g=AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    if(type==='send'){
+      o.frequency.setValueAtTime(880,AC.currentTime);
+      o.frequency.exponentialRampToValueAtTime(660,AC.currentTime+0.1);
+      g.gain.setValueAtTime(0.18,AC.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.15);
+      o.start(); o.stop(AC.currentTime+0.15);
+    } else if(type==='receive'){
+      // WA-style dua nada naik
+      o.frequency.setValueAtTime(520,AC.currentTime);
+      o.frequency.setValueAtTime(780,AC.currentTime+0.1);
+      g.gain.setValueAtTime(0.2,AC.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.25);
+      o.start(); o.stop(AC.currentTime+0.25);
+    } else if(type==='notif'){
+      // Notif masuk — 3 nada pendek
+      [0,0.12,0.24].forEach((t,i)=>{
+        const oo=AC.createOscillator();
+        const gg=AC.createGain();
+        oo.connect(gg); gg.connect(AC.destination);
+        oo.frequency.value=[660,780,880][i];
+        gg.gain.setValueAtTime(0.15,AC.currentTime+t);
+        gg.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+t+0.1);
+        oo.start(AC.currentTime+t); oo.stop(AC.currentTime+t+0.1);
+      });
+    }
+  }catch(e){}
+}
+
+// Unlock AudioContext on first user gesture
+document.addEventListener('touchstart',()=>{if(AC.state==='suspended')AC.resume();},{once:true});
+document.addEventListener('click',()=>{if(AC.state==='suspended')AC.resume();},{once:true});
+
 // ============================================================
 // FIREBASE CONFIG
 // ============================================================
@@ -585,6 +628,69 @@ function setAvEl(el, userData){
   else { el.textContent=ini(userData.name); el.style.background=userData.color||avColor(userData.id); }
 }
 
+
+// ============================================================
+// FCM PUSH NOTIFICATION (background)
+// ============================================================
+const VAPID_KEY = 'BCmQ6S4zFvtq2BdiM00I0nC1GC3LM6kCukg3P7hRMmNlG4dU_PyoohJodfzF-WUXEUjR69yOik6Iix-W2Ceqkv4';
+let messaging = null;
+
+async function initFCM(){
+  try{
+    if(!firebase.messaging) return;
+    messaging = firebase.messaging();
+
+    // Register service worker
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      messaging.useServiceWorker(reg);
+    }
+
+    // Request permission
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted') return;
+
+    // Get FCM token
+    const token = await messaging.getToken({vapidKey: VAPID_KEY});
+    if(token && ME){
+      // Simpan token ke Firebase user node
+      if(db) db.ref('users/'+ME.id+'/fcmToken').set(token);
+      console.log('FCM token saved');
+    }
+
+    // Handle foreground messages
+    messaging.onMessage(payload=>{
+      const data = payload.data||{};
+      playSound('notif');
+      // Trigger in-app notif banner
+      showNotif({
+        from: data.from,
+        text: data.text,
+        type: data.type||'text',
+        ts: Date.now()
+      });
+    });
+  }catch(e){ console.warn('FCM init failed:', e.message); }
+}
+
+// Kirim FCM notif via Firebase Functions / atau via DB trigger
+// Approach: simpan token penerima, kirim lewat db trigger
+async function sendFCMNotif(toUserId, msgData){
+  if(!db) return;
+  // Simpan ke antrian notif — nanti service worker atau Functions proses
+  const notifRef = db.ref('fcm_queue/'+toUserId).push();
+  notifRef.set({
+    from: ME.id,
+    fromName: ME.name,
+    text: msgData.text,
+    type: msgData.type||'text',
+    ts: Date.now(),
+    chatId: CHAT_ID
+  });
+  // Auto hapus setelah 10 detik
+  setTimeout(()=>notifRef.remove(), 10000);
+}
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -631,6 +737,7 @@ function startApp(u){
   document.getElementById('app').classList.add('on');
   setupEP(); setupSP(); setupBubColors();
   loadContacts(); setPresence();
+  try{ initFCM(); }catch(e){}
   // Apply saved bubble color
   const savedBub=sl('wk_bub_'+ME.id);
   if(savedBub) document.documentElement.style.setProperty('--bub-out-custom',savedBub);
@@ -891,14 +998,14 @@ function sendMsg(){
   if(EDITING_ID){doEditSave(text);return;}
   const id=Date.now().toString(36)+Math.random().toString(36).slice(2);
   const msg={id,from:ME.id,to:CONTACT_ID,text,ts:Date.now(),status:'sent',type:'text',deleted:false,edited:false};
-  saveMsg(msg); inp.value=''; autoResize(inp); closeEP();
+  playSound('send'); saveMsg(msg); inp.value=''; autoResize(inp); closeEP();
 }
 
 function sendSticker(em){
   if(!CHAT_ID)return;
   const id=Date.now().toString(36)+Math.random().toString(36).slice(2);
   const msg={id,from:ME.id,to:CONTACT_ID,text:em,ts:Date.now(),status:'sent',type:'sticker',deleted:false};
-  saveMsg(msg); closeEP(); toast('Stiker terkirim');
+  playSound('send'); saveMsg(msg); closeEP(); toast('Stiker terkirim');
 }
 
 function saveMsg(msg){
@@ -911,6 +1018,7 @@ function saveMsg(msg){
     db.ref('chats/'+CHAT_ID+'/'+msg.id).set(msg).then(()=>{
       updateStatus(msg.id,'delivered');
     });
+    sendFCMNotif(CONTACT_ID, msg);
   }
 }
 
@@ -1003,6 +1111,7 @@ function listenAllChats(){
 // NOTIFICATIONS
 // ============================================================
 function showNotif(msg){
+  playSound('notif');
   const contacts=sl('wk_contacts_'+ME.id)||{};
   const sender=contacts[msg.from];
   if(!sender)return;
