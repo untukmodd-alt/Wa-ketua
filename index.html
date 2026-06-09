@@ -466,6 +466,24 @@ body{background:var(--side-bg)}
     </div>
 
     <div class="st-section">
+      <div class="st-sec-title">Uji Coba</div>
+      <div class="st-item" onclick="testNotif()">
+        <div class="st-item-left">
+          <div class="st-item-icon" style="background:#e3f2fd;color:#1565c0;font-size:20px">🔔</div>
+          <div class="st-item-info"><h4>Test Notifikasi</h4><p>Simulasi notif masuk dari teman</p></div>
+        </div>
+        <span class="st-item-right">›</span>
+      </div>
+      <div class="st-item" onclick="testSound()">
+        <div class="st-item-left">
+          <div class="st-item-icon" style="background:#e8f5e9;color:#2e7d32;font-size:20px">🔊</div>
+          <div class="st-item-info"><h4>Test Suara</h4><p>Cek suara kirim &amp; notif</p></div>
+        </div>
+        <span class="st-item-right">›</span>
+      </div>
+    </div>
+
+    <div class="st-section">
       <div class="st-sec-title">Tentang</div>
       <div class="st-item">
         <div class="st-item-left">
@@ -1368,6 +1386,41 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 window.addEventListener('focus',()=>{ if(ME)setPresence(); });
 window.addEventListener('blur',()=>{ if(ME)setOffline(); });
+
+// ============================================================
+// TEST FUNCTIONS
+// ============================================================
+function testNotif(){
+  closeST();
+  // Simulasi pesan masuk dari "teman palsu"
+  const fakeMsg = {
+    id: 'test_'+Date.now(),
+    from: 'test_friend',
+    text: 'Halo! Ini test notifikasi Whattsap 👋',
+    type: 'text',
+    ts: Date.now(),
+    status: 'sent'
+  };
+  // Inject fake contact sementara kalau belum ada
+  const contacts = sl('wk_contacts_'+ME.id)||{};
+  if(!contacts['test_friend']){
+    contacts['test_friend'] = {
+      id:'test_friend', name:'Teman Test',
+      age:17, color:'#1565C0', addedAt:Date.now()
+    };
+    ss('wk_contacts_'+ME.id, contacts);
+  }
+  showNotif(fakeMsg);
+  toast('✅ Test notif dikirim!');
+}
+
+function testSound(){
+  closeST();
+  toast('🔊 Test suara kirim...');
+  playSound('send');
+  setTimeout(()=>{ playSound('notif'); toast('🔔 Test suara notif!'); }, 1000);
+}
+
 </script>
 </body>
 </html>
