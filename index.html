@@ -114,10 +114,11 @@ body{background:var(--side-bg)}
 .bub-stk{background:transparent!important;box-shadow:none!important;font-size:46px;padding:2px 4px}
 .mt{font-size:11px;color:var(--sub);display:flex;align-items:center;gap:3px;justify-content:flex-end;margin-top:3px}
 .etag{font-size:10px;color:#aaa;font-style:italic}
-.tick{font-size:12px;line-height:1}
-.tick.sent{color:#aaa}
-.tick.delivered{color:#aaa}
-.tick.read{color:var(--blue)}
+.tick{display:inline-flex;align-items:center;margin-left:2px;vertical-align:middle}
+.tick svg{width:16px;height:11px;display:block}
+.tick.sent svg path{stroke:#aaa}
+.tick.delivered svg path{stroke:#aaa}
+.tick.read svg path{stroke:var(--blue)}
 .dsep{text-align:center;margin:10px 0}
 .dsep span{background:rgba(255,255,255,.85);padding:4px 14px;border-radius:8px;font-size:12px;color:#555;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .empty-msg{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#999;gap:10px;padding:24px;text-align:center;font-size:14px}
@@ -734,7 +735,13 @@ function renderList(contacts){
       if(last.type==='sticker') prevText='🖼️ Stiker';
       else prevText=(last.deleted?'🚫 Pesan dihapus':last.text)||'';
     }
-    const tickHtml=last&&last.from===ME.id?`<span class="tick ${last.status||'sent'}">${last.status==='read'?'✓✓':last.status==='delivered'?'✓✓':'✓'}</span>`:'';
+    let tickHtml='';
+    if(last&&last.from===ME.id){
+      const ts=last.status||'sent';
+      const svg=ts==='sent'?`<svg viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="#aaa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`:`<svg viewBox="0 0 18 11" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 5.5L5 9.5L13 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9.5L13 1.5M9 9.5L17 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      const col=ts==='read'?'var(--blue)':'#aaa';
+      tickHtml=`<span class="tick" style="color:${col}">${svg}</span>`;
+    }
 
     div.innerHTML=`
       <div class="avw">
@@ -848,8 +855,8 @@ function buildBubble(msg){
   wrap.className='mw '+(isOut?'out':'in');
   wrap.dataset.mid=msg.id;
   const tickCls=msg.status==='read'?'read':msg.status==='delivered'?'delivered':'sent';
-  const tickChar=msg.status==='read'?'✓✓':msg.status==='delivered'?'✓✓':'✓';
-  const tickHtml=isOut?`<span class="tick ${tickCls}">${tickChar}</span>`:'';
+  const tickSvg=msg.status==='sent'?`<svg viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 5.5L5.5 9.5L14.5 1.5" stroke="#aaa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`:`<svg viewBox="0 0 18 11" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 5.5L5 9.5L13 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9.5L13 1.5M9 9.5L17 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const tickHtml=isOut?`<span class="tick ${tickCls}">${tickSvg}</span>`:'';
   let inner='';
   if(msg.type==='sticker'){
     inner=`<div class="bub bub-stk">${esc(msg.text)}<div class="mt">${fmtT(msg.ts)} ${tickHtml}</div></div>`;
@@ -899,8 +906,12 @@ function saveMsg(msg){
   msgs[msg.id]=msg; ss('wk_msgs_'+CHAT_ID,msgs);
   if(db)db.ref('chats/'+CHAT_ID+'/'+msg.id).set(msg);
   renderMsgs(); refreshList();
-  setTimeout(()=>updateStatus(msg.id,'delivered'),900);
-  setTimeout(()=>updateStatus(msg.id,'read'),2500);
+  // Status: sent → delivered when Firebase confirms write
+  if(db){
+    db.ref('chats/'+CHAT_ID+'/'+msg.id).set(msg).then(()=>{
+      updateStatus(msg.id,'delivered');
+    });
+  }
 }
 
 function updateStatus(mid,status){
@@ -917,10 +928,13 @@ function markRead(){
   if(!CHAT_ID)return;
   const msgs=sl('wk_msgs_'+CHAT_ID)||{}; let ch=false;
   Object.values(msgs).forEach(m=>{
-    if(m.from!==ME.id&&m.status!=='read'){m.status='read';ch=true;
-      if(db)db.ref('chats/'+CHAT_ID+'/'+m.id).update({status:'read'});}
+    if(m.from!==ME.id&&m.status!=='read'){
+      m.status='read'; ch=true;
+      // Write 'read' back to Firebase so sender sees blue ticks
+      if(db) db.ref('chats/'+CHAT_ID+'/'+m.id+'/status').set('read');
+    }
   });
-  if(ch)ss('wk_msgs_'+CHAT_ID,msgs);
+  if(ch) ss('wk_msgs_'+CHAT_ID,msgs);
 }
 
 // ============================================================
@@ -937,14 +951,23 @@ function listenMsgs(){
       const fm=fb[mid];
       if(!local[mid]||local[mid].status!==fm.status||local[mid].deleted!==fm.deleted||local[mid].text!==fm.text){
         const isNew=!local[mid];
+        const statusChanged=local[mid]&&local[mid].status!==fm.status;
         local[mid]=fm; ch=true;
-        // Show notif if message from other person and chat not open
-        if(isNew&&fm.from!==ME.id&&(CHAT_ID!==getChatId(ME.id,fm.from)||document.getElementById('sidebar').classList.contains('gone')===false)){
-          showNotif(fm);
+        // Show notif for new incoming messages
+        if(isNew&&fm.from!==ME.id){
+          const sidebarGone=document.getElementById('sidebar').classList.contains('gone');
+          if(!sidebarGone||CHAT_ID!==getChatId(ME.id,fm.from)){
+            showNotif(fm);
+          }
+        }
+        // Update only the changed bubble for status changes (no full re-render flicker)
+        if(statusChanged&&!isNew){
+          const w=document.querySelector('[data-mid="'+mid+'"]');
+          if(w){ w.replaceWith(buildBubble(fm)); }
         }
       }
     });
-    if(ch){ ss('wk_msgs_'+CHAT_ID,local); renderMsgs(); refreshList(); }
+    if(ch){ ss('wk_msgs_'+CHAT_ID,local); if(ch) renderMsgs(); refreshList(); }
   });
   // Also listen to ALL chats for notifications
   fbChatListener=()=>ref.off('value',handler);
