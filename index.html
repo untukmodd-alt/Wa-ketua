@@ -102,14 +102,17 @@ body{background:var(--side-bg)}
 .ch-info{flex:1;cursor:pointer;min-width:0}
 .ch-name{font-size:16px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ch-status{color:var(--sub);font-size:12px}
-.msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.msgs{flex:1;overflow-y:auto;padding:10px 0;display:flex;flex-direction:column;gap:1px}
 .msgs::-webkit-scrollbar{width:0}
-.mw{display:flex;flex-direction:column}
-.mw.out{align-items:flex-end}
-.mw.in{align-items:flex-start}
-.bub{max-width:78%;padding:7px 10px 4px;border-radius:10px;word-break:break-word;font-size:14.5px;line-height:1.45;box-shadow:0 1px 2px rgba(0,0,0,.1);position:relative}
-.mw.out .bub{background:var(--bub-out-custom,#DCF8C6);border-top-right-radius:2px}
-.mw.in .bub{background:#fff;border-top-left-radius:2px}
+.mw{display:flex;flex-direction:column;margin-bottom:1px}
+.mw.out{align-items:flex-end;padding-right:8px}
+.mw.in{align-items:flex-start;padding-left:8px}
+.bub{max-width:75%;padding:7px 10px 4px;border-radius:10px;word-break:break-word;font-size:14.5px;line-height:1.45;box-shadow:0 1px 2px rgba(0,0,0,.13);position:relative;margin-bottom:2px}
+.mw.out .bub{background:var(--bub-out-custom,#DCF8C6);border-top-right-radius:3px;border-bottom-right-radius:10px;border-bottom-left-radius:10px;border-top-left-radius:10px}
+.mw.in .bub{background:#fff;border-top-left-radius:3px;border-bottom-right-radius:10px;border-bottom-left-radius:10px;border-top-right-radius:10px}
+/* Ekor bubble mirip WA */
+.mw.out .bub::after{content:'';position:absolute;top:0;right:-7px;width:0;height:0;border-left:8px solid var(--bub-out-custom,#DCF8C6);border-top:0px solid transparent;border-bottom:8px solid transparent}
+.mw.in .bub::after{content:'';position:absolute;top:0;left:-7px;width:0;height:0;border-right:8px solid #fff;border-top:0px solid transparent;border-bottom:8px solid transparent}
 .bub-del{color:#aaa!important;font-style:italic}
 .bub-stk{background:transparent!important;box-shadow:none!important;font-size:46px;padding:2px 4px}
 .mt{font-size:11px;color:var(--sub);display:flex;align-items:center;gap:3px;justify-content:flex-end;margin-top:3px}
@@ -303,7 +306,7 @@ body{background:var(--side-bg)}
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
       <div class="sh">
-        <span class="sh-title">Whattsap</span>
+        <div style="display:flex;align-items:center;gap:8px"><span class="sh-title">Whattsap</span><span id="totalBadge" style="background:#f44336;color:#fff;border-radius:50%;min-width:20px;height:20px;font-size:11px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px">0</span></div>
         <div class="sh-icons">
           <button class="ib" onclick="openAddContact()" title="Tambah Kontak"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
           <button class="ib" onclick="openSettings()" title="Pengaturan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -883,6 +886,16 @@ function renderList(contacts){
     div.onclick=()=>openChat(c);
     list.appendChild(div);
   });
+  // Update total unread badge di header
+  const totalUnread = entries.reduce((sum,c)=>{
+    const msgs=sl('wk_msgs_'+getChatId(ME.id,c.id))||{};
+    return sum + Object.values(msgs).filter(m=>m.from!==ME.id&&m.status!=='read').length;
+  },0);
+  const badge=document.getElementById('totalBadge');
+  if(badge){
+    badge.textContent=totalUnread>99?'99+':totalUnread;
+    badge.style.display=totalUnread>0?'flex':'none';
+  }
 }
 
 function setFilter(f, el){
@@ -962,17 +975,22 @@ function renderMsgs(){
   if(!arr.length){
     area.innerHTML='<div class="empty-msg"><div class="ei">🔒</div><p>Pesan dienkripsi end-to-end.<br>Hanya kamu dan lawan bicara bisa membacanya.</p></div>'; return;
   }
-  let lastD='';
-  arr.forEach(m=>{
+  let lastD='', lastFrom='';
+  arr.forEach((m,i)=>{
     const d=fmtD(m.ts);
-    if(d!==lastD){ const s=document.createElement('div'); s.className='dsep'; s.innerHTML='<span>'+d+'</span>'; area.appendChild(s); lastD=d; }
+    if(d!==lastD){ const s=document.createElement('div'); s.className='dsep'; s.innerHTML='<span>'+d+'</span>'; area.appendChild(s); lastD=d; lastFrom=''; }
+    // Tambah gap kalau pengirim berganti
+    if(lastFrom && lastFrom!==m.from){
+      const gap=document.createElement('div'); gap.style.height='4px'; area.appendChild(gap);
+    }
     area.appendChild(buildBubble(m));
+    lastFrom=m.from;
   });
   scrollBot();
 }
 
 function buildBubble(msg){
-  const isOut=msg.from===ME.id;
+  const isOut=String(msg.from).trim()===String(ME.id).trim();
   const wrap=document.createElement('div');
   wrap.className='mw '+(isOut?'out':'in');
   wrap.dataset.mid=msg.id;
