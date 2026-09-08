@@ -531,6 +531,7 @@ body{background:var(--side-bg)}
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script>
 
 // ============================================================
@@ -659,9 +660,9 @@ async function initFCM(){
     messaging = firebase.messaging();
 
     // Register service worker
+    let swReg = null;
     if('serviceWorker' in navigator){
-      const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-      messaging.useServiceWorker(reg);
+      swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
     }
 
     // Request permission
@@ -669,7 +670,10 @@ async function initFCM(){
     if(perm !== 'granted') return;
 
     // Get FCM token
-    const token = await messaging.getToken({vapidKey: VAPID_KEY});
+    const token = await messaging.getToken({
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: swReg
+    });
     if(token && ME){
       // Simpan token ke Firebase user node
       if(db) db.ref('users/'+ME.id+'/fcmToken').set(token);
@@ -688,7 +692,10 @@ async function initFCM(){
         ts: Date.now()
       });
     });
-  }catch(e){ console.warn('FCM init failed:', e.message); }
+  }catch(e){
+    console.warn('FCM init failed:', e.message);
+    alert('FCM init gagal: ' + e.message); // sementara, biar keliatan tanpa buka console
+  }
 }
 
 // Kirim FCM notif via Cloudflare Worker (gratis, tanpa Cloud Functions/Blaze)
