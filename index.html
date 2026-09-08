@@ -691,22 +691,38 @@ async function initFCM(){
   }catch(e){ console.warn('FCM init failed:', e.message); }
 }
 
-// Kirim FCM notif via Firebase Functions / atau via DB trigger
-// Approach: simpan token penerima, kirim lewat db trigger
+// Kirim FCM notif via Cloudflare Worker (gratis, tanpa Cloud Functions/Blaze)
+// GANTI 2 nilai di bawah ini sesuai worker kamu:
+const FCM_WORKER_URL = 'https://spring-unit-7b11.untukmodd.workers.dev'; // URL worker kamu
+const FCM_WORKER_SECRET = 'wa-ketua-scrett'; // harus sama persis dengan APP_SECRET di worker
+
 async function sendFCMNotif(toUserId, msgData){
   if(!db) return;
-  // Simpan ke antrian notif — nanti service worker atau Functions proses
-  const notifRef = db.ref('fcm_queue/'+toUserId).push();
-  notifRef.set({
-    from: ME.id,
-    fromName: ME.name,
-    text: msgData.text,
-    type: msgData.type||'text',
-    ts: Date.now(),
-    chatId: CHAT_ID
-  });
-  // Auto hapus setelah 10 detik
-  setTimeout(()=>notifRef.remove(), 10000);
+  try{
+    // Ambil FCM token milik penerima dari Firebase
+    const snap = await db.ref('users/'+toUserId+'/fcmToken').get();
+    const token = snap.val();
+    if(!token) return; // penerima belum pernah buka app / belum izinkan notif
+
+    await fetch(FCM_WORKER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Secret': FCM_WORKER_SECRET
+      },
+      body: JSON.stringify({
+        token,
+        title: 'Whattsap: ' + ME.name,
+        body: msgData.type==='sticker' ? '🖼️ Stiker' : msgData.text,
+        data: {
+          from: ME.id,
+          fromName: ME.name,
+          chatId: CHAT_ID,
+          type: msgData.type||'text'
+        }
+      })
+    });
+  }catch(e){ console.warn('Gagal kirim push notif:', e.message); }
 }
 
 // ============================================================
