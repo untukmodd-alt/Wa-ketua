@@ -660,7 +660,7 @@ async function initFCM(){
 
     // Register service worker
     if('serviceWorker' in navigator){
-      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
       messaging.useServiceWorker(reg);
     }
 
